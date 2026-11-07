@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { holding } from "./chrome.js";
 
 export type JobStatus = "queued" | "running" | "done" | "failed" | "cancelled";
 
@@ -135,7 +136,7 @@ export class JobQueue {
         job.status = "running";
         job.attempts++;
         try {
-          job.files = await this.runner(job);
+          job.files = await holding(this.runner(job)); // a running job keeps the CDP connection (chrome.ts idle disconnect)
           job.status = "done";
           job.error = undefined;
         } catch (err) {

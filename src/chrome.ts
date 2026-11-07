@@ -71,10 +71,43 @@ async function launchChrome(): Promise<void> {
   throw new Error(`Chrome started but CDP port ${CDP_PORT} never came up.`);
 }
 
+// While a CDP client is attached, Chrome holds a "Capturing" NoDisplaySleep power assertion (Playwright turns on focus
+// emulation for the pages it attaches to), so the Mac's display never sleeps, even with nothing running (seen
+// 2026-11-07 with `pmset -g assertions`: ~10 h). So this process lets go of the CDP connection once it has been idle
+// for IDLE_MS: Chrome, the Google sign-in and the tabs stay, and the next call reconnects on its own (the MCP
+// connection to the app is untouched, nothing to reconnect by hand). Work in progress holds a lease (`holding`), so a
+// generation, a download or a slow call is never cut off. FLOW_MCP_IDLE_DISCONNECT_S=0 keeps the old behaviour.
+const IDLE_MS = Number(process.env.FLOW_MCP_IDLE_DISCONNECT_S ?? 180) * 1000;
+let leases = 0;
+let idleTimer: NodeJS.Timeout | undefined;
+function armIdle(): void {
+  clearTimeout(idleTimer);
+  if (!IDLE_MS || leases > 0 || !browser) return;
+  idleTimer = setTimeout(() => {
+    if (leases > 0) return;
+    const b = browser;
+    browser = null;
+    void b?.close().catch(() => {}); // over CDP, close() only disconnects: Chrome and its tabs keep running
+  }, IDLE_MS);
+  idleTimer.unref();
+}
+export async function holding<T>(work: Promise<T>): Promise<T> {
+  leases++;
+  clearTimeout(idleTimer);
+  try {
+    return await work;
+  } finally {
+    leases--;
+    armIdle();
+  }
+}
+
 export async function getBrowser(): Promise<Browser> {
+  armIdle(); // a caller without a lease still gets the idle disconnect later
   if (browser?.isConnected()) return browser;
   if (!(await cdpUp())) await launchChrome();
   browser = await chromium.connectOverCDP(CDP_URL);
+  armIdle();
   return browser;
 }
 

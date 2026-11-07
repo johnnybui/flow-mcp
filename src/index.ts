@@ -2,7 +2,7 @@
 import { randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { PINNED_PROJECT } from "./chrome.js";
+import { holding, PINNED_PROJECT } from "./chrome.js";
 import { LocalCore, shapes, type Core } from "./core.js";
 import { PLAYBOOK } from "./playbook.js";
 import { RemoteCore } from "./remote.js";
@@ -19,7 +19,7 @@ const server = new McpServer({ name: "flow-mcp", version: "0.2.0" });
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
 const reply = async (work: Promise<unknown>, extra: object = {}): Promise<ToolResult> => {
   try {
-    const data = await work;
+    const data = await holding(work);
     const body = Array.isArray(data) ? data : { ...(data as object), ...extra };
     return { content: [{ type: "text", text: JSON.stringify(body, null, 2) }] };
   } catch (err) {
@@ -39,7 +39,7 @@ const tasks = new Map<string, Task>();
 
 const patient = async (tool: string, work: Promise<unknown>): Promise<unknown> => {
   const task: Task = { task_id: `task-${randomUUID().slice(0, 8)}`, tool, started: new Date().toISOString(), status: "running" };
-  const settled = work.then(
+  const settled = holding(work).then(
     (result) => {
       task.status = "done";
       task.result = result;

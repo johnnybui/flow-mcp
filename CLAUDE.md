@@ -560,3 +560,11 @@ The preview tool could not read the project while it lived in ~/Desktop; check t
   Thinking level High (scene option `thinking`: Low | Medium | High). The popover shows "Thinking level" (radios Low /
   Medium / High, "Extra thorough" under High) only for 2.1; Pro has none and the option is skipped. Verified live on a
   project left on Pro: applySettings -> 2.1 + High; thinking Medium -> Medium; explicit Pro -> no Thinking section.
+- DISPLAY NEVER SLEPT (2026-11-07, the user's Mac): `pmset -g assertions` showed the Flow Chrome holding a
+  `NoDisplaySleepAssertion named: "Capturing"` for ~10 h. It comes from the CDP attachment itself (Playwright focus
+  emulation on attached pages): killing the two flow-mcp processes released it at once. chrome.ts now drops the CDP
+  connection after FLOW_MCP_IDLE_DISCONNECT_S (default 180 s, 0 = never) with nothing running; `holding()` leases cover
+  every tool call (index.ts `reply` / `patient`) and every running queue job (queue.ts), so work is never cut off.
+  Chrome, sign-in and tabs stay; the next call reconnects by itself (bound project pages are re-found via isClosed).
+  Verified with a scratch client, idle 20 s: assertion 1 after a call, 0 after 26 s idle, reconnect + flow_assets OK,
+  0 again after the next idle; a still generated over ~30 s (longer than the idle limit) finished and downloaded.
