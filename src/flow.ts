@@ -368,6 +368,9 @@ async function applySettings(page: Page, job: Job): Promise<number> {
   if (s.aspect_ratio) await pickRadio(page, s.aspect_ratio);
   const model = s.type === "image" && LEGACY_IMAGE_MODEL.test(s.model ?? "") ? LATEST_IMAGE_MODEL : s.model;
   if (model) await pickModel(page, model);
+  // Flow's new settings popover (2026-11, "Thinking level" section) is closed by clearBackdrops() when pickModel finds the
+  // newest model already selected; the count and cost lookups then fail ("no x1 option"). Reopen it if needed.
+  await openSettings(page);
   if (s.type === "video" && s.resolution) await pickRadio(page, new RegExp(`^${s.resolution}`));
   if (s.type === "video" && s.duration) await pickRadio(page, `${s.duration}s`);
   await pickRadio(page, `x${s.variants ?? 1}`);
