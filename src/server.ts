@@ -5,7 +5,7 @@ import { basename, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { CACHE_DIR as CAPTIONS_DIR } from "./captions.js";
-import { HOME_DIR } from "./chrome.js";
+import { HOME_DIR, holding } from "./chrome.js";
 import { OUTPUT_ROOT, shapes, type Core } from "./core.js";
 
 export const PORT = Number(process.env.FLOW_MCP_PORT ?? 8787);
@@ -109,7 +109,7 @@ export async function startServer(core: Core, independent = false): Promise<Serv
         const raw = (await readBody(req, 1024 * 1024)).toString() || "{}";
         const shape = (shapes as Record<string, z.ZodRawShape>)[method];
         const args = shape ? z.object(shape).parse(JSON.parse(raw)) : undefined;
-        return json(res, 200, await (core[method] as (a: unknown) => Promise<unknown>)(args));
+        return json(res, 200, await holding((core[method] as (a: unknown) => Promise<unknown>)(args))); // Studio panel + forwarded calls keep the CDP connection too
       }
       json(res, 404, { error: "Not found." });
     } catch (err) {
