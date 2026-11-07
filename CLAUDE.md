@@ -512,3 +512,51 @@ The preview tool could not read the project while it lived in ~/Desktop; check t
 - CAPTIONS WORKFLOW (the user's rule, 2026-10-18): transcribe first, show the words with likely mishearings fixed,
   get the user's OK, THEN make the video once. The playbook and the flow_captions description say so too.
 
+- ONE TAB PER PROJECT, SEVERAL SESSIONS (2026-11-07, the user's design: two Claude sessions, one per channel, one Chrome,
+  one Google login; separate Chrome windows/profiles are NOT wanted). `flow_project` (name | url | id) or env
+  `FLOW_MCP_PROJECT` (url, id or exact title) pins a process to one project: chrome.ts bindProject opens or reuses a tab
+  showing it and getFlowPage() returns only that tab from then on (reopened if closed, sent back if navigated away).
+  `name` = EXACT title: opened when it exists, created when missing (home page `New project` -> /project/<uuid> ->
+  top-bar `<input aria-label="Editable text">`, select all, type, Enter; verified by the tab title, which reads
+  "Google Flow - <title>", and refused loudly if the rename did not take, or the next call would create a second one).
+  Home page: each project is `<flow-project-card>` with `a[href="/project/<id>"]` and `.project-title-text`; also
+  `Edit project title` and `Delete project` buttons (never touched). Studio convention: "<Channel> Arts".
+  Claims: HOME/projects/<project id> holds the pid; a project held by another LIVE pid is refused ("in use by pid N"),
+  a dead pid counts for nothing. An unpinned process keeps the old behaviour (first Flow tab) but skips claimed tabs and
+  claims the one it uses. A client process (port taken) that calls flow_project becomes a local driver with its own
+  queue. Pinned processes never become clients and serve the panel on PORT+1..PORT+10 (token file `token-<port>`, so
+  the PORT owner's `token` is never overwritten); flow_status reports `studio` and `server`. Refused while this
+  process still has queued/running jobs. Background tabs work: both tabs reported visible, ~70 rAF/s, and hover ->
+  More options -> Download worked in a tab that was not in front (Playwright's attach keeps them live).
+  Verified live: three dist/index.js processes on scratch HOME/ports (pinned by env by name -> 8800; unpinned owner
+  8799 that then took another project by url; a client refused the held project, then took it after its holder exited
+  and served 8800), and two processes downloading at once from their own tabs (each got only its own files).
+  NOT exercised through the code: creating a project by name (mapped by hand once; only one test project allowed).
+- CROSS-PROCESS LOCKS (withLock in chrome.ts: O_EXCL file HOME/<name>.lock with the pid; dead or stale holder taken
+  over). `download`: Chrome's download behaviour is ONE browser-wide setting and the folder is shared, so two processes
+  downloading at once would take each other's files; held from setting the folder until the file lands (11 min stale
+  for upscales). `submit`: Generate clicks from different tabs are kept 2.5-5 s apart (one account, one invisible
+  reCAPTCHA; a person cannot press Generate in two tabs at once). Pacing (25-70 s) stays per process. Not shared and
+  left alone: characters.json (rare read-modify-write), output-folder numbering (each session uses its own folder).
+  Possibly shared and UNVERIFIED: Flow's agent settings (confirm Always/Never) if they are account-wide - two agent
+  batches in two tabs at the same moment could undo each other's "Never".
+- DOWNLOAD BINDING. Browser.downloadWillBegin (eventsEnabled on our page's CDP session) carries `frameId` = our tab's
+  target id and `suggestedFilename` "<title>_<first 8 chars of the media id>.<ext>" (e.g. "probe-a.png_417a3a71.jpg");
+  downloadProgress "completed" gives `filePath`. waitForDownloadedFile now waits for THAT file (never a stranger in
+  the folder; the old folder scan is only the fallback when no event arrives) and refuses a download whose name
+  carries a different id ("not the job's own media", nothing saved).
+- WRONG IMAGE AS scene-05 (2026-11-07, village-kit in "Trends TV Arts"): an image job saved an old character sheet,
+  the LAST tile of the grid ("Medieval messenger boy concept s..."), while its own new tile ("Peasant man sowing seed
+  animation") sat unrenamed at the top. freshMedia counted any tile "not in the before snapshot" as new, but that
+  snapshot holds only the tiles the virtual grid (cdk-virtual-scroll, rows of tiles in DOM order) had mounted, with the
+  ids they had at that moment - a tile mounted later, or whose <img> only then got data-media-id ("title:" handle
+  before), passes. With the real new tile still at "NN%", that old tile was the only "fresh" one and got taken. Now:
+  only tiles ABOVE the first known tile count (Flow inserts new results at the top), a tile known as "title:<name>"
+  stays known when its id appears, an image counts only once it has data-media-id, downloadMedia never falls back to
+  a title for a real media id (fails loudly instead), and the file is checked against the id (above). agentRound had
+  the same hole (its beforeNames was empty in practice) and gets the same rules. Replayed live: with the top tile
+  known, the old rule returned the tile below it; the new one returns nothing.
+- IMAGE DEFAULTS (2026-11-07, the user's call): images default to the newest numbered Nano Banana (2.1, never Pro) and
+  Thinking level High (scene option `thinking`: Low | Medium | High). The popover shows "Thinking level" (radios Low /
+  Medium / High, "Extra thorough" under High) only for 2.1; Pro has none and the option is skipped. Verified live on a
+  project left on Pro: applySettings -> 2.1 + High; thinking Medium -> Medium; explicit Pro -> no Thinking section.

@@ -10,6 +10,9 @@ import { OUTPUT_ROOT, shapes, type Core } from "./core.js";
 
 export const PORT = Number(process.env.FLOW_MCP_PORT ?? 8787);
 export const TOKEN_FILE = join(HOME_DIR, "token");
+// Each port gets its own token file: one process writing "token" for a second port would lock every client of the
+// first one out (401).
+const tokenFile = (port: number) => (port === PORT ? TOKEN_FILE : join(HOME_DIR, `token-${port}`));
 const UPLOAD_DIR = join(HOME_DIR, "uploads");
 const STUDIO_HTML = fileURLToPath(new URL("../studio/index.html", import.meta.url));
 const MAX_UPLOAD = 200 * 1024 * 1024;
@@ -59,13 +62,22 @@ function sendMedia(req: IncomingMessage, res: ServerResponse, file: string) {
 }
 
 export type ServerRole = "owner" | "client" | "none";
+export interface Served {
+  role: ServerRole;
+  // Where the Studio panel this process uses is served (its own, or the owner's for a client).
+  port?: number;
+  note: string;
+}
 
-// Serves the Studio panel and a JSON API on localhost. Returns "client" when another flow-mcp process already
-// owns the port (that process owns the Flow tab and the queue), "none" when the port is taken by something else.
-export async function startServer(core: Core): Promise<ServerRole> {
+// Serves the Studio panel and a JSON API on localhost. Role "client" when another flow-mcp process already owns the
+// port (that process owns the Flow tab and the queue), "none" when the port is taken by something else.
+// `independent` is for a process pinned to its own project (flow_project, FLOW_MCP_PROJECT): it must never become
+// someone else's client, so it serves on the next free port after PORT - leaving PORT, and today's owner/client
+// behaviour, to unpinned processes - and simply goes without a panel when none is free. It never waits.
+export async function startServer(core: Core, independent = false): Promise<Served> {
   mkdirSync(UPLOAD_DIR, { recursive: true });
   const token = randomBytes(24).toString("hex");
-  const allowedHosts = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]);
+  let allowedHosts = new Set<string>();
 
   const server = createServer(async (req, res) => {
     try {
@@ -106,31 +118,40 @@ export async function startServer(core: Core): Promise<ServerRole> {
     }
   });
 
-  const listening = await new Promise<boolean>((ok) => {
-    server.once("error", () => ok(false));
-    server.listen(PORT, "127.0.0.1", () => ok(true));
-  });
-  if (listening) {
+  const listen = (port: number) =>
+    new Promise<boolean>((ok) => {
+      server.once("error", () => ok(false));
+      server.listen(port, "127.0.0.1", () => ok(true));
+    });
+  for (const port of independent ? Array.from({ length: 10 }, (_, i) => PORT + 1 + i) : [PORT]) {
+    if (!(await listen(port))) continue;
+    allowedHosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
     mkdirSync(HOME_DIR, { recursive: true });
-    writeFileSync(TOKEN_FILE, token, { mode: 0o600 });
-    return "owner";
+    writeFileSync(tokenFile(port), token, { mode: 0o600 });
+    return { role: "owner", port, note: `Flow Studio is served by this process at http://127.0.0.1:${port}.` };
   }
+  if (independent) return { role: "none", note: `Flow Studio is not served by this process: ports ${PORT + 1}-${PORT + 10} are all taken.` };
   // The port is taken. Who has it matters enormously: becoming a second LOCAL core means two processes drive the same
   // Flow tab with separate queues, which is how a shot got generated and charged twice while flow_status reported an
   // empty queue (2026-09-20). Claude Desktop starts several of these at once and the owner is often still booting, or
   // busy inside a Playwright call, so one 2 s health check timing out proves nothing.
+  const client: Served = {
+    role: "client",
+    port: PORT,
+    note: `Another flow-mcp process owns port ${PORT}; this one passes its calls to it (same tab, same queue) until flow_project gives it a project of its own.`,
+  };
   for (let attempt = 0; attempt < 8; attempt++) {
     const other = (await fetch(`http://127.0.0.1:${PORT}/api/health`, { signal: AbortSignal.timeout(3000) }).then(
       (r) => r.json(),
       () => null,
     )) as { name?: string } | null;
-    if (other?.name === "flow-mcp") return "client";
+    if (other?.name === "flow-mcp") return client;
     // A valid answer from something that is NOT us means the port belongs to an unrelated program, and driving Flow
     // locally is safe.
-    if (other) return "none";
+    if (other) return { role: "none", note: `Port ${PORT} is used by another program, so Flow Studio is not served; this process drives Flow itself.` };
     await new Promise((r) => setTimeout(r, 1500));
   }
   // Never confirmed, but something holds the port and it is most likely a busy sibling. Defer to it: a client whose
   // calls fail loudly is far better than a second process silently spending the user's credits.
-  return "client";
+  return client;
 }

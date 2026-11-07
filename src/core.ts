@@ -6,6 +6,7 @@ import { assemble, localVoices, speakLocally, voiceTrack } from "./assemble.js";
 import { GEMINI_VOICES, geminiKey, saveGeminiKey, speakWithGemini } from "./gemini.js";
 import { extractLastFrame } from "./chain.js";
 import { burnCaptions, captionedName, captionSetup, previewCaptions, transcribe } from "./captions.js";
+import { bindProject } from "./chrome.js";
 import { characterLook, createCharacter, downloadAsset, trashAsset, editCharacter, getFlowState, listAssets, listCharacters, rememberCharacter, runAgentBatch, runContinue, runEdit, runGeneration } from "./flow.js";
 import { JobQueue, type Job } from "./queue.js";
 import { BIN, COMPUTER, IS_MAC, IS_WIN, moveToBin } from "./platform.js";
@@ -43,6 +44,10 @@ const sceneSchema = z.object({
     .describe(
       "Which 'asset:' references must be copied exactly (CHARACTER LOCK appended to the prompt). Omit: only characters made with flow_character are locked. true: every asset reference. false: none (use an asset as a style or layout reference only). A list of asset titles: just those.",
     ),
+  thinking: z
+    .enum(["Low", "Medium", "High"])
+    .optional()
+    .describe("Images: Flow's Thinking level for models that have one (Nano Banana 2.1). Default High; ignored for models without it (Nano Banana Pro)."),
   download_quality: z.enum(["original", "upscaled"]).optional().describe("'upscaled' fetches 1080p video / 2K image (free, slower). Default original."),
   retries: z.number().int().min(0).max(3).default(1).describe("Automatic retries when Flow itself reports the generation failed."),
   technique: z.string().optional().describe("Id from flow_techniques (e.g. 'orbit-360'); its exact phrase is appended to the prompt. One per scene."),
@@ -99,6 +104,16 @@ const captionFields = {
 };
 
 export const shapes = {
+  project: {
+    name: z
+      .string()
+      .min(1)
+      .max(100)
+      .optional()
+      .describe("Exact project title. Opened when a project with this title exists, created (and named) when it does not. Studio convention: one project per channel, \"<Channel> Arts\", e.g. \"Trends TV Arts\"."),
+    url: z.string().optional().describe("Project address, flow.google.com/project/<id>."),
+    id: z.string().optional().describe("Project id (the uuid in its address)."),
+  },
   status: { detailed: z.boolean().default(true).describe("false skips the plan/credits readout, which briefly opens Flow's account panel.") },
   generate: {
     project: z.string().min(1).describe("Folder name for the downloaded clips, e.g. 'HotelPromo'."),
@@ -354,6 +369,15 @@ export class LocalCore implements Core {
     if (job.params.edit_asset) return runEdit(job);
     return runGeneration(job);
   });
+
+  // Pins this process to one Flow project's tab (see bindProject). Refused while this process still has jobs: they were
+  // queued for the project it is in now and would otherwise run in the new one.
+  async project({ name, url, id }: Args<"project">) {
+    if (this.queue.list().some((j) => j.status === "queued" || j.status === "running")) {
+      throw new Error("This session still has Flow jobs queued or running in its current project. Wait for them (flow_wait) or cancel them first.");
+    }
+    return bindProject(url || id ? { id: url ?? id } : { name }, "flow_project");
+  }
 
   async status({ detailed }: Args<"status">) {
     const flow = await getFlowState(detailed && !this.queue.busy);

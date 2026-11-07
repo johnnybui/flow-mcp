@@ -108,7 +108,22 @@ the internet, and this tool has to run on your own computer to drive your Chrome
 
 Developed and tested with Claude. Codex and Antigravity speak the same protocol, so they should work the
 same way, but neither has been tried yet, so please report how it goes. Running two of them at once is safe:
-the first one started drives Flow, and the others pass their requests to it.
+the first one started drives Flow, and the others pass their requests to it, until a session picks its own
+project (below).
+
+### Several sessions at once, one project each
+
+Two assistant sessions (say, one per YouTube channel) can use Flow at the same time in one Chrome window and
+one Google sign-in: each works in its own Flow project, in its own tab. In each session, first say *"use the
+Flow project Trends TV Arts"*; the assistant calls `flow_project`, which opens that project (exact title) or
+creates it when it does not exist yet, and every later Flow call in that session stays in that tab. A handy
+convention is one project per channel, named `<Channel> Arts`: "Trends TV Arts", "Phone Down Arts".
+
+To pin a session from its config instead, set `FLOW_MCP_PROJECT` to the project's address, its id or its exact
+title in that server's `env`. A pinned session never relays through another one; it drives its own tab, and
+serves its own panel on the next free port after 8787 (`flow_status` says where). Two sessions can never take the
+same project: the second one is told which process has it. Without either, a session works as before, in the
+first Flow tab that no other session has taken.
 
 Restart the app, then ask it: *"check my Flow session"*. You should get your plan and credit balance
 back. Everything after that is plain English; you never type tool names.
@@ -187,8 +202,9 @@ agree on what is running. That API listens on 127.0.0.1 only and needs a per-run
 
 | Tool | Purpose |
 |---|---|
-| `flow_status` | Session state (signed in, project open, plan, credits left), queue, pacing, prompt playbook |
-| `flow_generate` | Queue scenes: prompt, image or video, model, aspect, duration, resolution, variants, first/last frame, reference images, `max_credits` cap |
+| `flow_status` | Session state (signed in, which project this session works in, plan, credits left), queue, pacing, where the panel is, prompt playbook |
+| `flow_project` | Work in one Flow project for the rest of the session, in its own tab: `name` (exact title: opened if it exists, else created), or `url` / `id`. Lets several sessions use Flow at once |
+| `flow_generate` | Queue scenes: prompt, image or video, model, aspect, duration, resolution, variants, Thinking level for images (`thinking`, default High; images default to the newest Nano Banana), first/last frame, reference images, `max_credits` cap |
 | `flow_wait` | Wait for jobs, or for the task id of a slow call; returns file paths and results. Answers within about 40 s, so call again until `finished` is true |
 | `flow_cancel` | Cancel a job that has not started |
 | `flow_retry` | Re-queue failed jobs with the same settings and file names (a failed tile is first retried inside Flow with its own free Retry button: `retries`, default 1) |
@@ -230,12 +246,15 @@ key → Save key**. It's checked with Google before it's saved, and stored only 
 
 - One generation at a time, with a random 25–70 second pause between them. The page carries an
   invisible reCAPTCHA; this drives the real interface at human pace and does nothing to evade it.
+  With several sessions, each keeps its own pace, and their Generate clicks are kept a few seconds apart.
+- Every download is checked against the media it was asked for: if Flow hands over a different file, nothing
+  is saved and the job says so, rather than filing the wrong picture under the scene's name.
 - Before each generation the server reads Flow's own credit quote and skips the scene if it exceeds
   `max_credits` (default 25).
 - Any Google account language works. The server finds Flow's buttons by their English names, so its
   Chrome window always shows Flow in English (it adds `?hl=en` to the address). Your account's own
   language setting is never changed, and prompts can be written in any language.
-- Environment variables: `GEMINI_API_KEY`, `FLOW_MCP_PORT` (8787), `FLOW_MCP_OUTPUT`,
+- Environment variables: `GEMINI_API_KEY`, `FLOW_MCP_PROJECT` (pin a session to one project), `FLOW_MCP_PORT` (8787), `FLOW_MCP_OUTPUT`,
   `FLOW_MCP_HOME`, `FLOW_MCP_CDP_PORT` (9333), `FLOW_MCP_CHROME`, `FLOW_MCP_PAUSE_MIN_S`,
   `FLOW_MCP_PAUSE_MAX_S`.
 

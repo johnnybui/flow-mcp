@@ -2,15 +2,17 @@
 import { randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { PINNED_PROJECT } from "./chrome.js";
 import { LocalCore, shapes, type Core } from "./core.js";
 import { PLAYBOOK } from "./playbook.js";
 import { RemoteCore } from "./remote.js";
-import { PORT, startServer } from "./server.js";
+import { startServer } from "./server.js";
 
 const local = new LocalCore();
-const role = await startServer(local);
-const core: Core = role === "client" ? new RemoteCore() : local;
-const studio = role === "none" ? undefined : `http://127.0.0.1:${PORT}`;
+// A process pinned to its own project (FLOW_MCP_PROJECT) drives its own tab and never becomes another's client.
+let served = await startServer(local, Boolean(PINNED_PROJECT));
+let core: Core = served.role === "client" ? new RemoteCore() : local;
+const studioUrl = () => (served.port ? `http://127.0.0.1:${served.port}` : undefined);
 
 const server = new McpServer({ name: "flow-mcp", version: "0.2.0" });
 
@@ -93,7 +95,36 @@ server.registerTool(
     inputSchema: shapes.status,
     annotations: { readOnlyHint: true, openWorldHint: true },
   },
-  (args) => reply(core.status(args), { studio, playbook: PLAYBOOK, ...(tasks.size ? { slow_calls: [...tasks.values()].map(({ result, ...t }) => t) } : {}) }),
+  (args) =>
+    reply(core.status(args), {
+      studio: studioUrl(),
+      server: served.note,
+      playbook: PLAYBOOK,
+      ...(tasks.size ? { slow_calls: [...tasks.values()].map(({ result, ...t }) => t) } : {}),
+    }),
+);
+
+// Gives this session its own project and tab. A process that was passing its calls to another flow-mcp (client) turns
+// into a driver of its own here, with its own queue and, when a port is free, its own Studio panel.
+async function pickProject(a: { name?: string; url?: string; id?: string }): Promise<unknown> {
+  const picked = await local.project(a);
+  if (core !== local) {
+    served = await startServer(local, true);
+    core = local;
+  }
+  return { ...picked, studio: studioUrl(), server: served.note, note: "Every later Flow call in this session works in this project's tab only." };
+}
+
+server.registerTool(
+  "flow_project",
+  {
+    title: "Pick this session's Flow project",
+    description:
+      "Work in one Flow project for the rest of this session, in its own tab of the shared Flow Chrome, so two sessions (two channels) can use Flow at once without touching each other's project. Pass `name` (exact title: opened when it exists, created when it does not; studio convention \"<Channel> Arts\", e.g. \"Trends TV Arts\") or `url`/`id` of an existing project. Call it before anything else in a session that shares Flow. Refused when another session already works in that project.",
+    inputSchema: shapes.project,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  },
+  (args) => reply(pickProject(args)),
 );
 
 server.registerTool(

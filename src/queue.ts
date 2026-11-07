@@ -11,6 +11,7 @@ export interface SceneParams {
   model?: string;
   aspect_ratio?: "16:9" | "9:16" | "1:1" | "4:3" | "3:4";
   variants?: number;
+  thinking?: "Low" | "Medium" | "High";
   first_frame?: string;
   last_frame?: string;
   reference_images?: string[];

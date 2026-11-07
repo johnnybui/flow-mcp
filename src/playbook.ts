@@ -2,6 +2,7 @@
 export const PLAYBOOK = {
   workflow: [
     "Call flow_status first. If it returns a hint, relay it to the user and stop.",
+    "When more than one session may use Flow (one per channel), call flow_project first with the channel's project (\"<Channel> Arts\"): this session then works only in that project's own tab. flow_status shows the project in flow.project_title.",
     "Plan the whole piece as scenes of one shot each, then send them in ONE flow_generate call so file numbering and chaining work.",
     "Tell the user the expected credit total before queueing anything that costs credits.",
     "Call flow_wait repeatedly until finished is true; scenes run one at a time with 25-70 s pauses.",
@@ -14,7 +15,7 @@ export const PLAYBOOK = {
     "Veo 3.1 - Lite": "10 credits, fixed 8s.",
     "Veo 3.1 - Fast": "20 credits, fixed 8s.",
     "Veo 3.1 - Quality": "100 credits, fixed 8s. Needs max_credits raised explicitly.",
-    "Nano Banana (newest, 2.1 today)": "Images, 0 credits; picked automatically for images. Use it to make keyframes and product stills before spending on video. Pro and 2 Lite are also 0 credits, when named.",
+    "Nano Banana (newest, 2.1 today)": "Images, 0 credits; picked automatically for images, with Thinking level High (scene option `thinking`). Use it to make keyframes and product stills before spending on video. Pro and 2 Lite are also 0 credits, when named.",
   },
   prompt_order: "subject and action -> shot size and camera move -> location -> visual style -> lighting -> sound/dialogue",
   prompt_rules: [

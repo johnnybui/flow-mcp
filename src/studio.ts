@@ -4,7 +4,7 @@ import { LocalCore } from "./core.js";
 import { PORT, startServer } from "./server.js";
 import { openUrl } from "./platform.js";
 
-const role = await startServer(new LocalCore());
+const { role } = await startServer(new LocalCore());
 const url = `http://127.0.0.1:${PORT}`;
 if (role === "none") {
   console.error(`Port ${PORT} is used by another program. Set FLOW_MCP_PORT to a free port.`);
