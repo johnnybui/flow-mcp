@@ -333,7 +333,9 @@ The preview tool could not read the project while it lived in ~/Desktop; check t
   "studio shot of a person" template. (5) `Show history` lists every version with the prompt that made it.
   editCharacter presses Done on a leftover editor before starting (leaving any other way could drop a finished edit),
   never throws away a finished edit over a failed download (it returns a note), and with no `change` only re-saves the
-  portrait. The stored look (characters.json) is quoted word for word in every scene's CHARACTER LOCK, so
+  portrait. The stored look (characters.json) is quoted word for word in every scene's CHARACTER LOCK (added by default only
+  for flow_character characters; a scene's `character_lock` true / false / [titles] overrides it, so a plain asset can be a
+  style or place reference without being copied into the scene), so
   flow_character_edit takes `look` (the full new description); without it the change is appended "and this wins".
 - ONE-MINUTE TOOL LIMIT: the desktop app's Code tab gives up on an MCP call after 60 s ("Request timed out", measured
   60.6 s on a character edit that went on to finish), and Codex does by default - while flow_wait defaulted to 240 s.

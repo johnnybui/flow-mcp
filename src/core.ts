@@ -37,6 +37,12 @@ const sceneSchema = z.object({
     .describe(
       "Reference media: absolute image paths, or 'asset:<title>' for media or characters already in the Flow project. Flow's COMPOSER takes references OR first/last frames on a video scene, never both, so with frames set these are skipped and the job says so. Flow itself can do both via agent mode (save the last frame, Animate it, then add the character).",
     ),
+  character_lock: z
+    .union([z.boolean(), z.array(z.string())])
+    .optional()
+    .describe(
+      "Which 'asset:' references must be copied exactly (CHARACTER LOCK appended to the prompt). Omit: only characters made with flow_character are locked. true: every asset reference. false: none (use an asset as a style or layout reference only). A list of asset titles: just those.",
+    ),
   download_quality: z.enum(["original", "upscaled"]).optional().describe("'upscaled' fetches 1080p video / 2K image (free, slower). Default original."),
   retries: z.number().int().min(0).max(3).default(1).describe("Automatic retries when Flow itself reports the generation failed."),
   technique: z.string().optional().describe("Id from flow_techniques (e.g. 'orbit-360'); its exact phrase is appended to the prompt. One per scene."),
@@ -370,14 +376,17 @@ export class LocalCore implements Core {
     const queued = this.queue.list().filter((j) => j.params.output_dir === output_dir).map((j) => Number(j.params.file_stem.match(/\d+/)?.[0] ?? 0));
     const offset = Math.max(0, ...onDisk, ...queued);
     const jobs: Job[] = [];
-    for (const [i, { chain_previous, reference_previous, technique, ...scene }] of scenes.entries()) {
+    for (const [i, { chain_previous, reference_previous, technique, character_lock, ...scene }] of scenes.entries()) {
       const phrase = technique ? techniqueById(technique)!.phrase : "";
       // A referenced character must come out identical, not merely similar, so the scene says so explicitly. The
       // wording stays medium-neutral: the same lock has to serve a flat cartoon character and a photoreal avatar.
-      const cast = (scene.reference_images ?? [])
-        .filter((r) => r.startsWith("asset:"))
-        .map((r) => r.slice(6).trim())
-        .filter((n) => characterLook(n) !== undefined || /^[\w .'-]{1,60}$/.test(n));
+      // Locked only when asked: by default just the characters saved with flow_character; a plain asset may be a style,
+      // place or prop reference, and locking it would redraw its subject into every scene.
+      const assets = (scene.reference_images ?? []).filter((r) => r.startsWith("asset:")).map((r) => r.slice(6).trim());
+      const wanted = Array.isArray(character_lock) ? character_lock.map((n) => n.replace(/^asset:/, "").trim()) : undefined;
+      const cast = assets.filter((n) =>
+        character_lock === true ? true : character_lock === false ? false : wanted ? wanted.includes(n) : characterLook(n) !== undefined,
+      );
       const lock = cast.length
         ? ` CHARACTER LOCK — ${cast.join(" and ")} must match the reference image exactly, as if copying it: same head shape and size, same face, same eyes, same hair, same skin, same build and proportions, same clothing items in the same colours, same hands, and the same rendering style and level of realism as the reference. Never redesign, restyle, re-proportion, re-age or re-colour them, and never swap an item for a similar one.${cast
             .map((n) => (characterLook(n) ? ` ${n} is exactly: ${characterLook(n)}.` : ""))
